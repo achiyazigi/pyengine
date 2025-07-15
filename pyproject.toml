@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyengine"               # Package name on PyPI (can include hyphen)
+version = "0.0.1"                  # Sync with __init__.py manually for now
+description = "engine for python based on pygame-ce"
+authors = [
+    { name="achiyazigi" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pygame-ce==2.5.5"
+]
+
+[project.urls]
+Homepage = "http://bla.com"
+Documentation = "http://bla.com"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
