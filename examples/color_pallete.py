@@ -10,15 +10,14 @@ BG = Color(0, 0, 0)
 
 class ColorPalette(Entity):
 
-    SATURATION_BAR_WIDTH = 30
-
-    def __init__(self, pos: Pos, size: Size):
+    def __init__(self, pos: Pos, size: Size, on_pick: Callable[[], Color] = None):
         super().__init__()
+
         self.transform.pos = pos
         self.transform.size = size
         self.saturation_bar_transfrom = Transform()
         self.saturation_bar_transfrom.size = Size(
-            ColorPalette.SATURATION_BAR_WIDTH, self.transform.size.h
+            self.transform.size.w / 10, self.transform.size.h
         )
         self.palette_transform = Transform()
         self.palette_transform.size = Size(
@@ -32,11 +31,13 @@ class ColorPalette(Entity):
         self.palette = pygame.Surface(self.palette_transform.size)
         self.saturation_bar = pygame.Surface(self.saturation_bar_transfrom.size)
         self.s = 1
-
+        self.on_pick = on_pick
+        self.z_index = 2
+        self.preview_rect = Rect((0, 0), self.palette_transform.size / 10)
         self.redraw_palette()
 
         for y in range(int(self.saturation_bar_transfrom.size.h)):
-            s = 255 * (y / self.palette_transform.size.h)
+            s = int(255 * (y / self.palette_transform.size.h))
             pygame.draw.line(
                 self.saturation_bar,
                 Color(s, s, s),
@@ -51,11 +52,13 @@ class ColorPalette(Entity):
                 1,
             )
 
-        self.font = pygame.font.SysFont("Comic Sans MS", 30)
         self.hovered_pos = None
         self.saturation_clicked_pos = None
         InputManager().register_mouse_released(
             pygame.BUTTON_LEFT, self, self.on_mouse_release
+        )
+        InputManager().register_mouse_pressed(
+            pygame.BUTTON_LEFT, self, self.on_mouse_pressed
         )
 
     def redraw_palette(self):
@@ -81,47 +84,46 @@ class ColorPalette(Entity):
             )
             self.redraw_palette()
 
-        else:
-            hovered_color_str = str(self.get_hovered_color())
-            subprocess.run("pbcopy", text=True, input=hovered_color_str)
-            print(f"coppied: {hovered_color_str}")
+        color = self.get_hovered_color()
+        if color and self.on_pick:
+            self.on_pick(color)
+        return True  # stop propegation
+
+    def on_mouse_pressed(self):
+        color = self.get_hovered_color()
+        if not color and not self.saturation_bar_transfrom.rect().collidepoint(
+            pygame.mouse.get_pos()
+        ):
+            GameManager().destroy(self)
 
     def get_hovered_color(self):
         if self.hovered_pos:
-            return self.palette.get_at(self.hovered_pos)
-        return BG
+            if self.palette_transform.rect().collidepoint(self.hovered_pos):
+                offset_pos = self.hovered_pos - self.palette_transform.pos
+                return self.palette.get_at((int(offset_pos.x), int(offset_pos.y)))
+        return None
 
     def update(self, dt):
         super().update(dt)
         mouse_pos = pygame.mouse.get_pos()
         if self.palette_transform.rect().collidepoint(mouse_pos):
             self.hovered_pos = Pos(mouse_pos)
+        else:
+            self.hovered_pos = None
+
+    def render_debug(self, sur):
+        super().render_debug(sur)
+        if self.hovered_pos:
+            pygame.draw.circle(sur, Color("Red"), self.hovered_pos, 3)
 
     def render(self, sur):
         sur.blit(self.palette, self.palette_transform.pos)
         sur.blit(self.saturation_bar, self.saturation_bar_transfrom.pos)
         if self.hovered_pos:
-            hovered_color = self.get_hovered_color()
-
-            text_sur = self.font.render(
-                str(hovered_color),
-                False,
-                Color("White"),
-                hovered_color,
-            )
-            text_sur_pos = Pos(
-                pygame.math.clamp(
-                    self.hovered_pos.x,
-                    self.transform.pos.x,
-                    self.transform.rect().right - text_sur.width,
-                ),
-                pygame.math.clamp(
-                    self.hovered_pos.y,
-                    self.transform.pos.y,
-                    self.transform.rect().bottom - text_sur.height,
-                ),
-            )
-            sur.blit(text_sur, text_sur_pos)
+            color = self.get_hovered_color()
+            self.preview_rect.center = self.hovered_pos
+            pygame.draw.rect(sur, color, self.preview_rect)
+            pygame.draw.rect(sur, Color("Black"), self.preview_rect, 2)
 
     def compute_color(self, x, y):
         # Normalize x and y to a range of 0 to 1

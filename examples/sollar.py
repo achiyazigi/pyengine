@@ -2,12 +2,13 @@ import pygame
 from pygame import BUTTON_LEFT, K_SPACE, Color, K_r, Rect
 from pyengine import *
 
-W = 640
-H = 512
+W = 1280
+H = 720
 pan_center = Pos(W / 2, H / 2)
 BG = Color("Black")
 G = 0.1
 scale = 1.0
+MAX_MASS = 100000000
 
 # CENTER + (pos-CENTER)*scale = res
 # pos = res-CENTER/scale + CENTER
@@ -76,7 +77,7 @@ class Slider(Entity):
 
     def render(self, sur):
         super().render(sur)
-        sur.blit(self.name_sur, self.transform.pos - Pos(0, self.name_sur.height))
+        sur.blit(self.name_sur, self.transform.pos - Pos(0, self.name_sur.get_height()))
         pygame.draw.rect(
             sur,
             Slider.COLOR,
@@ -101,7 +102,7 @@ class Slider(Entity):
         sur.blit(
             font_sur,
             (
-                self.get_control_rect_center() - font_sur.width / 2,
+                self.get_control_rect_center() - font_sur.get_width() / 2,
                 self.transform.rect().bottom,
             ),
         )
@@ -132,7 +133,7 @@ class Planet(Entity):
     def on_press(self):
         if (
             world_to_screen(self.transform.pos).distance_to(pygame.mouse.get_pos())
-            < self.radius
+            < self.radius * scale
         ):
             self.dragging = True
 
@@ -226,7 +227,6 @@ class SollarSystem(Entity):
         GameManager().destroy(*self.planets, *self.sliders)
 
     def on_scroll(self, _scroll):
-        print(_scroll)
         global scale
         scale = max(scale + _scroll.y * 0.1, 0.1)
 
@@ -268,7 +268,7 @@ class SollarSystem(Entity):
                         planet.mass,
                         lambda mass, planet=planet: set_planet_mass(planet, mass),
                         0.1,
-                        1000000,
+                        MAX_MASS,
                         planet.color,
                         "Mass",
                     )
@@ -360,9 +360,9 @@ class SollarSystem(Entity):
 
     def render(self, sur):
         super().render(sur)
-        self.orbits_sur = self.get_orbits_sur(sur.size)
+        self.orbits_sur = self.get_orbits_sur(sur.get_size())
 
-        sur.blit(self.orbits_sur)
+        sur.blit(self.orbits_sur, Pos(0, 0))
 
 
 class SollarSystemManager(Entity):
@@ -389,13 +389,16 @@ class SollarSystemManager(Entity):
             "Drag planet:     to set position", True, SollarSystemManager.KEY_MAP_COLOR
         )
         sur = Surface(
-            Size(reset.width, start_animation.height + reset.height + drag.height)
+            Size(
+                reset.get_width(),
+                start_animation.get_height() + reset.get_height() + drag.get_height(),
+            )
         )
         sur.blits(
             [
                 (start_animation, (0, 0)),
-                (reset, (0, start_animation.height)),
-                (drag, (0, start_animation.height + reset.height)),
+                (reset, (0, start_animation.get_height())),
+                (drag, (0, start_animation.get_height() + reset.get_height())),
             ]
         )
         return sur
@@ -411,12 +414,12 @@ class SollarSystemManager(Entity):
         if self.sollar_system:
             GameManager().destroy(self.sollar_system)
         sun = GameManager().instatiate(
-            Planet(pan_center.copy(), Vector2(0, 0), 1000000, 60, Color("Yellow"))
+            Planet(pan_center.copy(), Vector2(0, 0), MAX_MASS, 220, Color("Yellow"))
         )
 
         earth = GameManager().instatiate(
             Planet(
-                sun.transform.pos + Pos(100, 0),
+                sun.transform.pos + Pos(1000, 0),
                 Vector2(0, 30),
                 40000,
                 20,
@@ -431,7 +434,7 @@ class SollarSystemManager(Entity):
         self.sollar_system = GameManager().instatiate(SollarSystem([sun, earth, moon]))
 
     def render(self, sur):
-        sur.blit(self.key_map_sur, Pos(30, H - self.key_map_sur.height))
+        sur.blit(self.key_map_sur, Pos(30, H - self.key_map_sur.get_height()))
 
 
 def main():

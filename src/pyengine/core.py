@@ -3,13 +3,14 @@ from enum import Enum
 from math import pi, sin
 from threading import Timer
 import pygame
-from pygame import Color, FRect, Vector2, Surface
+from pygame import Color, Rect, Vector2, Surface
 from abc import ABC, ABCMeta
 from typing import (
     Callable,
     List,
     MutableSequence,
     Sequence,
+    Set,
     Tuple,
     Union,
     overload,
@@ -88,7 +89,7 @@ class Transform:
         self.size = Size(0, 0)
 
     def rect(self):
-        return FRect(self.pos, self.size)
+        return Rect(self.pos, self.size)
 
     @property
     def center(self):
@@ -205,9 +206,13 @@ class Entity(ABC):
 
     @z_index.setter
     def z_index(self, z_index):
-        RenderManager().unregister(self)
-        self._z_index = z_index
-        RenderManager().register(self)
+        if self.state == EntityState.Started:
+            RenderManager().unregister(self)
+            self._z_index = z_index
+            RenderManager().register(self)
+            InputManager().update_callbacks_order()
+        else:
+            self._z_index = z_index
 
     @property
     def update_order(self):
@@ -215,9 +220,12 @@ class Entity(ABC):
 
     @update_order.setter
     def update_order(self, update_order):
-        UpdateManager().unregister(self)
-        self._update_order = update_order
-        UpdateManager().register(self)
+        if self.state == EntityState.Started:
+            UpdateManager().unregister(self)
+            self._update_order = update_order
+            UpdateManager().register(self)
+        else:
+            self._update_order = update_order
 
 
 CollisionFunction = Callable[[Entity, Entity], None]
@@ -261,7 +269,6 @@ class CollideEntity(Entity):
                 break
             collide_with_set = ColliderManager().graph.edges.get(base_type, {})
             for collide_with in collide_with_set:
-                print("found collision between", base_type, "and", collide_with)
                 func = ColliderManager().collision_functions_dict[
                     (base_type, collide_with)
                 ]
@@ -272,7 +279,7 @@ class CollideEntity(Entity):
         ColliderManager().unregister(self)
 
 
-class _Utils:
+class Utils:
     def remove_from_sorted_list[T, K](
         sorted_list: MutableSequence[T], item: T, *, key: Callable[[T], K] = None
     ):
@@ -299,7 +306,7 @@ class UpdateManager(metaclass=Singelton):
         )
 
     def unregister(self, entity: Entity):
-        _Utils.remove_from_sorted_list(
+        Utils.remove_from_sorted_list(
             self.entityes_sorted, entity, key=lambda item: item.update_order
         )
 
@@ -332,7 +339,7 @@ class RenderManager(metaclass=Singelton):
         bisect.insort_right(self.entityes_sorted, entity, key=lambda item: item.z_index)
 
     def unregister(self, entity: Entity):
-        _Utils.remove_from_sorted_list(
+        Utils.remove_from_sorted_list(
             self.entityes_sorted, entity, key=lambda item: item.z_index
         )
 
@@ -342,7 +349,8 @@ class RenderManager(metaclass=Singelton):
                 entity.render(sur)
 
 
-CallbacksDict = dict[int, list[tuple[Entity, Callable]]]
+# the callback should return true to stop propegate
+CallbacksDict = dict[int, list[tuple[Entity, Callable[[], bool]]]]
 
 
 class InputManager(metaclass=Singelton):
@@ -353,26 +361,41 @@ class InputManager(metaclass=Singelton):
         self.callbacks_mouse_pressed: CallbacksDict = {}
         self.callbacks_mouse_released: CallbacksDict = {}
         self.callbacks_mouse_scroll: List[Tuple[Entity, Callable[[Vector2], None]]] = []
+        self.update_callbacks_entities_order = False
 
-    def _register_key(callbacks: CallbacksDict, key, entity, func):
+    def _update_callbacks_for(self, callbacks: CallbacksDict):
+        for val in callbacks.values():
+            val.sort(key=lambda e: e[0].z_index, reverse=True)
+        self.update_callbacks_entities_order = False
+
+    def update_callbacks_order(self):
+        self._update_callbacks_for(self.callbacks_key_down)
+        self._update_callbacks_for(self.callbacks_key_up)
+        self._update_callbacks_for(self.callbacks_mouse_pressed)
+        self._update_callbacks_for(self.callbacks_mouse_released)
+
+    def _register_key(self, callbacks: CallbacksDict, key, entity: Entity, func):
         if key not in callbacks:
             callbacks[key] = []
         callbacks[key].append((entity, func))
+        self.update_callbacks_entities_order = True
+        # idx = bisect.bisect([e.z_index for e, _ in callbacks[key]], entity.z_index)
+        # callbacks[key].insert(idx, (entity, func))
 
     def register_key_down(self, key, entity: Entity, func):
-        InputManager._register_key(self.callbacks_key_down, key, entity, func)
+        self._register_key(self.callbacks_key_down, key, entity, func)
         return self
 
     def register_key_up(self, key, entity, func):
-        InputManager._register_key(self.callbacks_key_up, key, entity, func)
+        self._register_key(self.callbacks_key_up, key, entity, func)
         return self
 
     def register_mouse_pressed(self, button, entity, func):
-        InputManager._register_key(self.callbacks_mouse_pressed, button, entity, func)
+        self._register_key(self.callbacks_mouse_pressed, button, entity, func)
         return self
 
     def register_mouse_released(self, button, entity, func):
-        InputManager._register_key(self.callbacks_mouse_released, button, entity, func)
+        self._register_key(self.callbacks_mouse_released, button, entity, func)
 
     def register_mouse_scroll(self, entity, func):
         self.callbacks_mouse_scroll.append((entity, func))
@@ -380,7 +403,8 @@ class InputManager(metaclass=Singelton):
     def _trigger_key(callbacks: CallbacksDict, key):
         for entity, func in callbacks.get(key, []):
             if entity in GameManager().entities:
-                func()
+                if func():
+                    break
 
     def trigger_key_down(self, key):
         InputManager._trigger_key(self.callbacks_key_down, key)
@@ -410,6 +434,8 @@ class InputManager(metaclass=Singelton):
         """
         returns True if got a quit event
         """
+        if self.update_callbacks_entities_order:
+            self.update_callbacks_order()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
@@ -495,7 +521,7 @@ class EmptyEntity(Entity):
 class GameManager(metaclass=Singelton):
     def __init__(self):
         self.entities: set[Entity] = set()
-        self.clock = pygame.Clock()
+        self.clock = pygame.time.Clock()
         self.dt = 0
         self.fps = 60
         self.should_exit = False
@@ -503,7 +529,7 @@ class GameManager(metaclass=Singelton):
         self.to_add: list[Entity] = []
         if not pygame.font.get_init():
             pygame.font.init()
-        self.font = pygame.Font()
+        self.font = pygame.font.Font(size=20)
 
     @overload
     def instatiate[T](self, __entity: T) -> T: ...
@@ -531,9 +557,12 @@ class GameManager(metaclass=Singelton):
         for entity in entities:
             self.to_destroy.append(entity)
 
-    def clear_scene(self):
+    def clear_scene(self, exceptions: Set[Entity] = None):
         InputManager().clear()
-        self.destroy(*self.entities)
+        entities = self.entities
+        if exceptions:
+            entities = (e for e in entities if e not in exceptions)
+        self.destroy(*entities)
 
     def update(self):
         should_quit = InputManager().update()
@@ -593,7 +622,7 @@ class UiButton(Entity):
         super().__init__()
         self.text = ""
         self.render_data = UiButton.RenderData(
-            Color("White"), Color("Blue"), pygame.Font()
+            Color("White"), Color("Blue"), GameManager().font
         )
         self.z_index = UiButton.UI_DEFAULT_Z_INDEX
         self.hovered = False
@@ -671,7 +700,7 @@ class Animation(Entity):
         super().__init__()
         self.duration = duration_secs
         self.timer = 0
-        self.animation_func = self.get_animation_func(animation_type)
+        self.animation_func = Animation.get_animation_func(animation_type)
         self.repeat = repeat
         self.should_play = True
 
@@ -693,7 +722,8 @@ class Animation(Entity):
     def animation_frame(self, x):
         pass
 
-    def get_animation_func(self, animation_type: AnimationType):
+    @staticmethod
+    def get_animation_func(animation_type: AnimationType):
         def ease_out_elastic(x):
             c4 = (2 * pi) / 3
             if x == 0 or x == 1:
@@ -707,3 +737,14 @@ class Animation(Entity):
         else:
             assert animation_type == AnimationType.EaseOutElastic
             return ease_out_elastic
+
+
+class SingeltonEntity(Entity, metaclass=Singelton):
+    def __init__(self):
+        super().__init__()
+        GameManager().instatiate(self)
+
+    def kill(self):
+        super().kill()
+        self.state = EntityState.Initialized
+        GameManager().instatiate(self)

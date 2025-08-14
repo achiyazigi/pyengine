@@ -397,7 +397,7 @@ class MenuButton(UiButton):
 
     def start(self):
         super().start()
-        self.render_data.font = pygame.Font(size=int(0.4 * self.transform.size.w))
+        self.render_data.font = pygame.font.Font(size=int(0.4 * self.transform.size.w))
 
 
 class GameOverScreen(Entity):
@@ -435,7 +435,7 @@ class GameOverScreen(Entity):
     def __init__(self):
         super().__init__()
         self.z_index = -100
-        self.font = pygame.Font(size=int(W / 8))
+        self.font = pygame.font.Font(size=int(W / 8))
         title_surf = self.font.render("Game Over", True, Color("White"))
 
         self.render_data = GameOverScreen.RenderData(
