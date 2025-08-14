@@ -186,14 +186,13 @@ class TestRenderSorting(BaseTestWithCleanup):
         return super().setUp()
 
     def tearDown(self):
-        RenderManager().unregister(self.a)
-        RenderManager().unregister(self.b)
+        GameManager().clear_scene()
         return super().tearDown()
 
     def test_render_order(self):
-
-        RenderManager().register(self.a)
-        RenderManager().register(self.b)
+        GameManager().instatiate(self.a)
+        GameManager().instatiate(self.b)
+        GameManager().update()
         self.a.z_index = 2
         self.b.z_index = 1
         self.assertEqual(RenderManager().entityes_sorted, [self.b, self.a])
