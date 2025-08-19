@@ -2,6 +2,7 @@ import pygame
 from pygame import Color
 import subprocess
 from pyengine import *
+import shutil
 
 W = 520
 H = 480
@@ -10,7 +11,7 @@ BG = Color(0, 0, 0)
 
 class ColorPalette(Entity):
 
-    def __init__(self, pos: Pos, size: Size, on_pick: Callable[[], Color] = None):
+    def __init__(self, pos: Pos, size: Size, on_pick: Callable[[Color], None] = None):
         super().__init__()
 
         self.transform.pos = pos
@@ -165,7 +166,9 @@ class ColorPalette(Entity):
 def main():
 
     display = pygame.display.set_mode((W, H))
-    GameManager().instatiate(ColorPalette(Pos(0, 0), Size(W, H)))
+    GameManager().instatiate(
+        ColorPalette(Pos(0, 0), Size(W, H), lambda c: print("Color" + c.__str__()))
+    )
 
     while not GameManager().should_exit:
 
