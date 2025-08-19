@@ -100,6 +100,7 @@ class Dock(Entity, metaclass=Singelton):
         self.transform.size.h = Dock.H
         self.transform.pos.y = H - Dock.H
         self.front_window = None
+        GameManager().instatiate(self)
 
     def update_transform(self):
         self.transform.size.w = (
@@ -314,7 +315,6 @@ def main():
     bin_w = GameManager().instatiate(Window("Bin", Size(70, 220), Pos(500, 100)))
     bin_w.is_minimized = True
 
-    GameManager().instatiate(Dock())
     pygame.init()
     pygame.display.set_caption("Window")
     screen = pygame.display.set_mode((W, H))
