@@ -1,5 +1,6 @@
+from typing import List
 import pygame
-from pygame import Color
+from pygame import Color, Rect
 from barplot import BarPlot
 from window import Window
 from pyengine import *
@@ -161,13 +162,12 @@ def main():
     )
     pygame.display.set_caption("Bar Plot")
     screen = pygame.display.set_mode((W, H))
-
+    GameManager().debug = True
     UpdateManager().start_fixed_update_loop()
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()
         GameManager().render(screen)
-        # GameManager().render_debug(screen)
         pygame.display.flip()
     UpdateManager().stop_fixed_update_loop()
 

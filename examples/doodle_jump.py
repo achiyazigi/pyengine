@@ -485,7 +485,7 @@ def main():
     GameManager().fps = 100
     UpdateManager.FIXED_DT = 0.005
     UpdateManager().start_fixed_update_loop()
-
+    GameManager().debug = True
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()

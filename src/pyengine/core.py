@@ -1,12 +1,16 @@
 from dataclasses import dataclass
 from enum import Enum
 from math import pi, sin
+import multiprocessing
+import multiprocessing.queues
 from threading import Timer
+import time
 import pygame
 from pygame import Color, Rect, Vector2, Surface
 from abc import ABC, ABCMeta
 from typing import (
     Callable,
+    Dict,
     List,
     MutableSequence,
     Sequence,
@@ -299,6 +303,7 @@ class UpdateManager(metaclass=Singelton):
         self.entityes_sorted: list[Entity] = []
         self.fixed_update_running = True
         self.fixed_update_timer = None
+        self.debug_info: Dict[Entity, float] = {}
 
     def register(self, entity: Entity):
         bisect.insort_right(
@@ -311,8 +316,19 @@ class UpdateManager(metaclass=Singelton):
         )
 
     def update(self, dt):
+        if GameManager().debug:
+            self.update_debug(dt)
+        else:
+            for entity in self.entityes_sorted:
+                entity.update(dt)
+
+    def update_debug(self, dt):
+        self.debug_info.clear()
         for entity in self.entityes_sorted:
+            start_time = time.time_ns()
             entity.update(dt)
+            finish_time = time.time_ns()
+            self.debug_info[entity] = finish_time - start_time
 
     def start_fixed_update_loop(self):
         self.fixed_update_timer = Timer(
@@ -327,13 +343,27 @@ class UpdateManager(metaclass=Singelton):
 
     def fixed_update(self):
         ColliderManager().update()
+        if GameManager().debug:
+            self.fixed_update_debug()
+        else:
+            for entity in self.entityes_sorted:
+                entity.fixed_update(UpdateManager.FIXED_DT)
+
+    def fixed_update_debug(self):
         for entity in self.entityes_sorted:
+            start_time = time.time_ns()
             entity.fixed_update(UpdateManager.FIXED_DT)
+            finish_time = time.time_ns()
+            fixed_update_time = finish_time - start_time
+            if entity not in self.debug_info:
+                self.debug_info[entity] = 0
+            self.debug_info[entity] += fixed_update_time
 
 
 class RenderManager(metaclass=Singelton):
     def __init__(self):
         self.entityes_sorted: List[Entity] = []
+        self.debug_info: Dict[Entity, float] = {}
 
     def register(self, entity: Entity):
         bisect.insort_right(self.entityes_sorted, entity, key=lambda item: item.z_index)
@@ -344,9 +374,20 @@ class RenderManager(metaclass=Singelton):
         )
 
     def render(self, sur: Surface):
+        if GameManager().debug:
+            self.render_debug(sur)
+        else:
+            for entity in self.entityes_sorted:
+                if entity.should_render:
+                    entity.render(sur)
+
+    def render_debug(self, sur: Surface):
+        self.debug_info.clear()
         for entity in self.entityes_sorted:
-            if entity.should_render:
-                entity.render(sur)
+            start_time = time.time_ns()
+            entity.render(sur)
+            finish_time = time.time_ns()
+            self.debug_info[entity] = finish_time - start_time
 
 
 # the callback should return true to stop propegate
@@ -444,6 +485,8 @@ class InputManager(metaclass=Singelton):
 
             elif event.type == pygame.KEYUP:
                 self.trigger_key_up(event.key)
+                if GameManager().debug and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    GameManager().on_ctrl_d()
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 self.trigger_mouse_pressed(event.button)
@@ -518,7 +561,21 @@ class EmptyEntity(Entity):
         sur.fill(Color("Yellow"))
 
 
+@dataclass
+class BarData:
+    xs: List[str]
+    ys: List[float]
+
+
 class GameManager(metaclass=Singelton):
+    DEBUG_INFO_DISPLAY_W = 500
+    DEBUG_INFO_DISPLAY_H = 500
+
+    @dataclass
+    class DebugInfoElement:
+        update_info: BarData
+        render_info: BarData
+
     def __init__(self):
         self.entities: set[Entity] = set()
         self.clock = pygame.time.Clock()
@@ -530,6 +587,9 @@ class GameManager(metaclass=Singelton):
         if not pygame.font.get_init():
             pygame.font.init()
         self.font = pygame.font.Font(size=20)
+        self.debug = False
+        self.debug_info_process: multiprocessing.Process = None
+        self.debug_info_queue = multiprocessing.Queue(10)
 
     @overload
     def instatiate[T](self, __entity: T) -> T: ...
@@ -566,6 +626,7 @@ class GameManager(metaclass=Singelton):
 
     def update(self):
         should_quit = InputManager().update()
+
         self.should_exit |= should_quit
 
         UpdateManager().update(self.dt)
@@ -582,12 +643,36 @@ class GameManager(metaclass=Singelton):
 
         self.to_add.clear()
 
+        if self.debug:
+            debug_info_element = GameManager.DebugInfoElement(
+                update_info=BarData(
+                    xs=[type(e).__name__ for e in UpdateManager().debug_info.keys()],
+                    ys=list(UpdateManager().debug_info.values()),
+                ),
+                render_info=BarData(
+                    xs=[type(e).__name__ for e in RenderManager().debug_info.keys()],
+                    ys=list(RenderManager().debug_info.values()),
+                ),
+            )
+            try:
+                self.debug_info_queue.put(debug_info_element, block=False)
+            except multiprocessing.queues.Full:
+                pass
+        if (
+            self.should_exit
+            and self.debug_info_process
+            and self.debug_info_process.is_alive()
+        ):
+            self.debug_info_process.terminate()
+            self.debug_info_process.join()
+
     def render(self, sur: Surface):
         RenderManager().render(sur)
         self.dt = self.clock.tick(self.fps) / 1000.0
+        if self.debug:
+            self.render_debug(sur)
 
     def render_debug(self, sur: Surface):
-        self.render(sur)
         for entity in self.entities:
             entity.render_debug(sur)
 
@@ -607,6 +692,61 @@ class GameManager(metaclass=Singelton):
             + Vector2Left() * horz_pad
             + Vector2Left() * entities_count_sur.get_width(),
         )
+
+    def on_ctrl_d(self):
+        if self.debug_info_process is None or not self.debug_info_process.is_alive():
+            self.debug_info_process = multiprocessing.Process(
+                target=self.debug_info_process_loop,
+                args=(self.debug_info_queue,),
+            )
+            self.debug_info_process.start()
+
+    @staticmethod
+    def debug_info_process_loop(debug_info_queue: multiprocessing.Queue):
+        from .barplot import BarPlot
+
+        bg = Color("Black")
+        pygame.init()
+        display = pygame.display.set_mode(
+            (GameManager.DEBUG_INFO_DISPLAY_W, GameManager.DEBUG_INFO_DISPLAY_H),
+            flags=pygame.RESIZABLE,
+        )
+        pygame.display.set_caption("Debug info")
+
+        barplot_size = Size(display.get_width(), display.get_height() / 2)
+
+        update_debug_barplot = GameManager().instatiate(
+            BarPlot(Pos(), barplot_size, [], [], "update time per entity ns")
+        )
+        render_debug_barplot = GameManager().instatiate(
+            BarPlot(
+                Pos(0, display.get_height() / 2),
+                barplot_size,
+                [],
+                [],
+                "render time per entity ns",
+            )
+        )
+        # GameManager().debug = True  # OK now I just fck around
+        while not GameManager().should_exit:
+            barplot_size.w = display.get_width()
+            barplot_size.h = display.get_height() / 2
+            render_debug_barplot.transform.pos.y = display.get_height() / 2
+            display.fill(bg)
+            try:
+                current_debug_info: GameManager.DebugInfoElement = (
+                    debug_info_queue.get_nowait()
+                )
+                update_debug_barplot.xs = current_debug_info.update_info.xs
+                update_debug_barplot.ys = current_debug_info.update_info.ys
+                render_debug_barplot.xs = current_debug_info.render_info.xs
+                render_debug_barplot.ys = current_debug_info.render_info.ys
+            except multiprocessing.queues.Empty:
+                pass
+            GameManager().update()
+            GameManager().render(display)
+            pygame.display.flip()
+        pygame.quit()
 
 
 class UiButton(Entity):
@@ -688,6 +828,8 @@ class AnimationType(Enum):
     Linear = 0
     Sin = 1
     EaseOutElastic = 2
+    EaseOutBounce = 3
+    EaseInOutBack = 4
 
 
 class Animation(Entity):
@@ -730,10 +872,39 @@ class Animation(Entity):
                 return x
             return pow(2, -10 * x) * sin((x * 10 - 0.75) * c4) + 1
 
+        def ease_out_bounce(x: float):
+            n1 = 7.5625
+            d1 = 2.75
+
+            if x < 1 / d1:
+                return n1 * x * x
+            elif x < 2 / d1:
+                x -= 1.5 / d1
+                return n1 * x * x + 0.75
+            elif x < 2.5 / d1:
+                x -= 2.25 / d1
+                return n1 * x * x + 0.9375
+            else:
+                x -= 2.625 / d1
+                return n1 * x * x + 0.984375
+
+        def ease_in_out_back(x: float):
+            c1 = 1.70158
+            c2 = c1 * 1.525
+            return (
+                (pow(2 * x, 2) * ((c2 + 1) * 2 * x - c2)) / 2
+                if x < 0.5
+                else (pow(2 * x - 2, 2) * ((c2 + 1) * (x * 2 - 2) + c2) + 2) / 2
+            )
+
         if animation_type == AnimationType.Linear:
             return lambda x: x
         elif animation_type == AnimationType.Sin:
             return lambda x: sin(pi * x)
+        elif animation_type == AnimationType.EaseOutBounce:
+            return ease_out_bounce
+        elif animation_type == AnimationType.EaseInOutBack:
+            return ease_in_out_back
         else:
             assert animation_type == AnimationType.EaseOutElastic
             return ease_out_elastic

@@ -1,20 +1,18 @@
-from math import ceil, log
-from typing import List
+from math import floor
 import pygame
-from pygame import Color, Rect
-from pyengine import *
+from pygame import Color
+from .core import *
 
 W = 640
 H = 512
 BG = Color("Black")
 
 
-class BarPlot(Animation):
+class BarPlot(Entity):
     AXIS_COLOR = Color(100, 100, 100)
     BAR_DEFAULT_COLOR = Color(245, 154, 0, 255)
     LABEL_COLOR = Color("White")
     BAR_X_PAD = 10
-    ANIMATION_DUR_SECS = 3
     Y_TICS_COUNT = 10
 
     def __init__(
@@ -25,44 +23,84 @@ class BarPlot(Animation):
         xs: List[str | float] = None,
         title: str = "",
     ):
-        super().__init__(BarPlot.ANIMATION_DUR_SECS, AnimationType.EaseOutElastic)
+        super().__init__()
         self.transform.pos = pos
         self.transform.size = size
+        self._ys = []
         self.ys = ys
-        if xs == None:
-            xs = [""] * len(self.ys)
-        self.xs = [str(x) for x in xs]
-        self.max_value = max(self.ys)
-        self.min_value = min(self.ys)
-        self.scale_factor = self.transform.size.h / (
-            self.max_value - (self.min_value if self.min_value < 0 else 0)
-        )
+        self.xs = xs
+        self.recalculate_params()
         self.axis_color = BarPlot.AXIS_COLOR
-        self.zero = self.transform.rect().bottom
-        if self.min_value < 0:
-            self.zero += self.min_value * self.scale_factor
-        self.bar_width = (
-            self.transform.size.w - (len(self.ys) + 1) * BarPlot.BAR_X_PAD
-        ) / len(self.ys)
-        self.animation_stretch = 0
 
         self.hovered_bar_idx = None
 
         title_font = pygame.font.Font(size=int(self.transform.size.h / 7))
         self.title_sur = title_font.render(title, True, BarPlot.LABEL_COLOR)
 
-        self.details_h = self.transform.size.h / 5
+    def recalculate_params(self):
+        self.max_value = max(self._ys) if len(self._ys) > 0 else 0
+        self.min_value = min(self._ys) if len(self._ys) > 0 else 0
+        if self.max_value == self.min_value:
+            self.scale_factor = self.transform.size.h / (
+                self.max_value if self.max_value != 0 else 1
+            )
+        else:
+            self.scale_factor = self.transform.size.h / (
+                self.max_value - (self.min_value if self.min_value < 0 else 0)
+            )
+        self.zero = self.transform.rect().bottom
+        if self.min_value < 0:
+            self.zero += self.min_value * self.scale_factor
+        self.bar_width = max(
+            (
+                (self.transform.size.w - (len(self._ys) + 1) * BarPlot.BAR_X_PAD)
+                / len(self._ys)
+                if len(self._ys) > 0
+                else 0
+            ),
+            0,
+        )
+
+        self.details_h = self.transform.size.h / 2
         details_title_h = int(self.details_h / 3)
         details_value_h = int(self.details_h - details_title_h)
         self.details_title_font = pygame.font.Font(size=details_title_h)
         self.details_value_font = pygame.font.Font(size=details_value_h)
 
+    @property
+    def ys(self):
+        return self._ys
+
+    @ys.setter
+    def ys(self, ys):
+        if self.ys != ys:
+            self._ys = ys
+            self.recalculate_params()
+
+    @ys.getter
+    def ys(self):
+        return self._ys
+
+    @property
+    def xs(self):
+        return self._xs
+
+    @xs.setter
+    def xs(self, xs):
+        if xs == None:
+            xs = [""] * len(self._ys)
+        self._xs = [str(x) for x in xs]
+
+    @xs.getter
+    def xs(self):
+        return self._xs
+
     def bar_idx_from_pos(self, pos: Pos):
         res = (pos.x - self.transform.pos.x) / (BarPlot.BAR_X_PAD + self.bar_width)
-        idx = int(res)
-        if 0 <= idx < len(self.ys):
-            y = self.ys[idx]
-            h = abs(y * self.scale_factor) * self.animation_stretch
+        idx = int(floor(res))
+        if 0 <= idx < len(self._ys):
+            y = self._ys[idx]
+            h = abs(y * self.scale_factor)
             top = self.zero - h
             if y < 0:
                 top = self.zero
@@ -105,10 +143,6 @@ class BarPlot(Animation):
                 Pos(self.transform.pos.x, tic_y - tic_label_sur.get_height() / 2),
             )
 
-    def animation_frame(self, x):
-        super().animation_frame(x)
-        self.animation_stretch = x
-
     def update(self, dt):
         super().update(dt)
         self.zero = self.transform.rect().bottom
@@ -140,10 +174,10 @@ class BarPlot(Animation):
         super().render(sur)
         self.draw_axis(sur)
         left = self.transform.pos.x
-        for x, y in zip(self.xs, self.ys):
+        for x, y in zip(self._xs, self._ys):
             left += BarPlot.BAR_X_PAD
 
-            h = abs(y * self.scale_factor) * self.animation_stretch
+            h = abs(y * self.scale_factor)
             top = self.zero - h
             if y < 0:
                 top = self.zero
@@ -171,7 +205,7 @@ class BarPlot(Animation):
             left += self.bar_width
         if self.hovered_bar_idx != None:
             self.draw_details(
-                sur, self.xs[self.hovered_bar_idx], self.ys[self.hovered_bar_idx]
+                sur, self._xs[self.hovered_bar_idx], self._ys[self.hovered_bar_idx]
             )
         sur.blit(self.title_sur, self.transform.pos)
 

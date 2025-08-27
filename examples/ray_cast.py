@@ -1,4 +1,5 @@
-from pygame import Surface
+from pygame import Surface, Color
+import pygame
 from pygame.math import clamp
 from pyengine import *
 
@@ -334,7 +335,7 @@ def main():
     screen = pygame.display.set_mode((W, H))
 
     UpdateManager().start_fixed_update_loop()
-
+    GameManager().debug = True
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()
