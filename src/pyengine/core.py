@@ -18,6 +18,7 @@ from typing import (
     Tuple,
     Union,
     overload,
+    TypeVar
 )
 import bisect
 
@@ -284,7 +285,12 @@ class CollideEntity(Entity):
 
 
 class Utils:
-    def remove_from_sorted_list[T, K](
+    
+
+    T = TypeVar('T')
+    K = TypeVar('K')
+
+    def remove_from_sorted_list(
         sorted_list: MutableSequence[T], item: T, *, key: Callable[[T], K] = None
     ):
         left = bisect.bisect_left(sorted_list, key(item) if key else item, key=key)
@@ -560,6 +566,7 @@ class EmptyEntity(Entity):
     def render(self, sur: Surface):
         sur.fill(Color("Yellow"))
 
+T = TypeVar('T')
 
 @dataclass
 class BarData:
@@ -592,11 +599,11 @@ class GameManager(metaclass=Singelton):
         self.debug_info_queue = multiprocessing.Queue(10)
 
     @overload
-    def instatiate[T](self, __entity: T) -> T: ...
+    def instatiate(self, __entity: T) -> T: ...
     @overload
-    def instatiate[T](self, *entitys: T) -> List[T]: ...
+    def instatiate(self, *entities: T) -> List[T]: ...
 
-    def instatiate[T](self, *entities: T) -> Union[T, List[T]]:
+    def instatiate(self, *entities: T) -> Union[T, List[T]]:
         """
         Add entity to the scene
         """
