@@ -1,7 +1,8 @@
-from math import atan2, cos
+from math import atan2, cos, pi, sin
 from random import randint
+from typing import List, Tuple
 import pygame
-from pygame import BUTTON_LEFT, Color
+from pygame import BUTTON_LEFT, Color, Rect
 from pyengine import *
 
 W = 640
@@ -85,6 +86,9 @@ class Targets(Entity, metaclass=Singelton):
     def register_target(self, target: "Target"):
         self.targets.append(target)
 
+    def unregister_target(self, target: "Target"):
+        self.targets.remove(target)
+
     def update(self, dt):
         super().update(dt)
         if self.spawn_timer > Targets.SPAWN_INTERVAL_SECS:
@@ -118,6 +122,15 @@ class Target(CollideEntity):
         self.transform.size = Size(Target.W, self.vec.length())
         self.color = Target.COLOR
         self.set_parent(Scroll())
+
+    def update(self, dt):
+        super().update(dt)
+        if self.transform.rect().right < 0:
+            GameManager().destroy(self)
+
+    def kill(self):
+        super().kill()
+        Targets().unregister_target(self)
 
     def render(self, sur):
         pygame.draw.line(
@@ -173,6 +186,9 @@ class Floor(CollideEntity, metaclass=Singelton):
             l.x -= Player().speed * dt
         if self.lines[-1].x - W <= Floor.NEW_GEN_DIST_THRESH:
             self.generate_new_point()
+
+        if self.lines[1].x < 0:  # first segemnt ends outside of screen
+            self.lines.pop(0)
 
     def render(self, sur):
         pygame.draw.lines(
@@ -265,6 +281,10 @@ class Arrow(CollideEntity):
             self.velocity.y += G * dt
         if self.hit:
             self.origin.x -= Player().speed * dt
+
+        if self.transform.rect().right < 0:
+            assert not self.is_attached
+            GameManager().destroy(self)
 
     def render(self, sur):
         pygame.draw.line(
@@ -402,13 +422,12 @@ def main():
     pygame.init()
     pygame.display.set_caption("Archer")
     screen = pygame.display.set_mode((W, H))
-
+    GameManager().debug = True
     UpdateManager().start_fixed_update_loop()
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()
         GameManager().render(screen)
-        # GameManager().render_debug(screen)
         pygame.display.flip()
     UpdateManager().stop_fixed_update_loop()
 

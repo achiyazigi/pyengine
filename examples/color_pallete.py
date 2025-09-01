@@ -1,8 +1,7 @@
+from typing import Callable
 import pygame
-from pygame import Color
-import subprocess
+from pygame import Color, Rect
 from pyengine import *
-import shutil
 
 W = 520
 H = 480
@@ -169,6 +168,7 @@ def main():
     GameManager().instatiate(
         ColorPalette(Pos(0, 0), Size(W, H), lambda c: print("Color" + c.__str__()))
     )
+    GameManager().debug = True
 
     while not GameManager().should_exit:
 

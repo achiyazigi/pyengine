@@ -1,6 +1,7 @@
 import pygame
 from pygame import BUTTON_LEFT, K_SPACE, Color, K_r, Rect
 from pyengine import *
+from typing import List
 
 W = 1280
 H = 720
@@ -445,7 +446,7 @@ def main():
 
     UpdateManager().FIXED_DT = 0.1
     GameManager().instatiate(SollarSystemManager())
-
+    GameManager().debug = True
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()

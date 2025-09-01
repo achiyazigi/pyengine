@@ -1,3 +1,4 @@
+from typing import List
 import pygame
 from pygame import BUTTON_LEFT, Color, Rect
 from pyengine import *
@@ -320,6 +321,7 @@ def main():
     screen = pygame.display.set_mode((W, H))
 
     UpdateManager().start_fixed_update_loop()
+    GameManager().debug = True
     while not GameManager().should_exit:
         screen.fill(BG)
         GameManager().update()
