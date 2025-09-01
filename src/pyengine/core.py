@@ -577,6 +577,7 @@ class BarData:
 class GameManager(metaclass=Singelton):
     DEBUG_INFO_DISPLAY_W = 500
     DEBUG_INFO_DISPLAY_H = 500
+    multiprocessing_method_was_set = False
 
     @dataclass
     class DebugInfoElement:
@@ -584,6 +585,11 @@ class GameManager(metaclass=Singelton):
         render_info: BarData
 
     def __init__(self):
+        try:
+            multiprocessing.set_start_method('spawn')
+        except RuntimeError:
+            pass
+
         self.entities: set[Entity] = set()
         self.clock = pygame.time.Clock()
         self.dt = 0
